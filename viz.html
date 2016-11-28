@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="utf-8" />
+	<link href="https://fonts.googleapis.com/css?family=Baloo+Bhai" rel="stylesheet"> <!--FONT FROM GOOGLE-->
+	<title>Web Audio Visualizer</title>
+	<style>
+	body {
+         background: #eeeeee;
+         font-family: tahoma, verdana, sans serif;
+		 font-family: 'Baloo Bhai', cursive;
+      }
+
+      canvas {
+	  float: right;
+		margin:20px;
+		background-color: black;
+        box-shadow: 4px 4px 8px rgba(0,0,0,0.5);
+    }
+      
+	  
+	  div{
+		background-color: grey;
+		border-radius: 20px;
+		margin-top:10px;
+      	padding:30px;
+		text-align: center;
+		width:40%;
+		margin: auto;
+		min-width: 1200px;
+		border-radius: 20px;
+	  }
+	  table{
+		margin:auto;
+		text-align: right;
+	  }
+	</style>
+	<script>
+	// An IIFE ("Iffy") - see the notes in mycourses
+	(function(){
+		"use strict";
+		
+		var NUM_SAMPLES = 256;
+		var SOUND_1 = 'media/Hello, World!.mp3';
+		var SOUND_2 = 'media/The Moss.mp3';
+		var SOUND_3 = 'media/Mystic Messenger.mp3';
+		var audioElement;
+		var analyserNode;
+		var canvas,ctx;
+		var maxRadius = 200;
+		var arcValue = 20;
+		var freq = true;
+		var invert = false, tintRed = false, tintBlue = false,tintGreen = false, noise = false, lines = false, greySc = false;
+		var delayAmount = 0.0;
+		var delayNode;
+		
+		function init(){
+			// set up canvas stuff
+			canvas = document.querySelector('canvas');
+			ctx = canvas.getContext("2d");
+			
+			// get reference to <audio> element on page
+			audioElement = document.querySelector('audio');
+			
+			// call our helper function and get an analyser node
+			analyserNode = createWebAudioContextWithAnalyserNode(audioElement);
+			
+			// get sound track <select> and Full Screen button working
+			setupUI();
+			
+			// load and play default sound into audio element
+			playStream(audioElement,SOUND_1);
+			
+			// start animation loop
+			update();
+		}
+		
+		
+		function createWebAudioContextWithAnalyserNode(audioElement) {
+			var audioCtx, analyserNode, sourceNode;
+			// The || is because WebAudio has not been standardized across browsers yet
+			// http://webaudio.github.io/web-audio-api/#the-audiocontext-interface
+			audioCtx = new (window.AudioContext || window.webkitAudioContext);
+			
+			// create an analyser node
+			analyserNode = audioCtx.createAnalyser();
+			
+			//create DelayNode instance
+			delayNode = audioCtx.createDelay();
+			delayNode.delayTime.value = delayAmount;
+			
+			// fft stands for Fast Fourier Transform
+			analyserNode.fftSize = NUM_SAMPLES;
+			
+			// this is where we hook up the <audio> element to the analyserNode
+			sourceNode = audioCtx.createMediaElementSource(audioElement); 
+			sourceNode.connect(analyserNode);
+			
+			// here we connect to the destination i.e. speakers
+			//analyserNode.connect(audioCtx.destination);
+			
+			sourceNode.connect(audioCtx.destination);
+			//thischannelwillplayandvisualizethedelay
+			sourceNode.connect(delayNode);
+			delayNode.connect(analyserNode);
+			analyserNode.connect(audioCtx.destination);
+			
+			return analyserNode;
+		}
+		
+		function setupUI(){
+			document.querySelector("#trackSelect").onchange = function(e){
+				playStream(audioElement,e.target.value);
+			};
+			
+			document.querySelector("#fsButton").onclick = function(){
+				requestFullscreen(canvas);
+			};
+			
+			document.querySelector("#myRange").onchange = function(){ //slider stuff
+				maxRadius = document.getElementById("myRange").value;
+			};
+			
+			document.querySelector("#arcVal").onchange = function(){ //slider stuff
+				arcValue = document.getElementById("arcVal").value;
+			};
+			
+			document.querySelector("#Red").onchange = function(){ //checkbox stuff
+				tintRed = !tintRed;
+			};
+			document.querySelector("#Blue").onchange = function(){ //checkbox stuff
+				tintBlue = !tintBlue;
+			};
+			document.querySelector("#Green").onchange = function(){ //checkbox stuff
+				tintGreen = !tintGreen;
+			};
+			document.querySelector("#GreySc").onchange = function(){ //checkbox stuff
+				greySc = !greySc;
+			};
+			document.querySelector("#Invert").onchange = function(){ //checkbox stuff
+				invert = !invert;
+			};
+			document.querySelector("#Noise").onchange = function(){ //checkbox stuff
+				noise = !noise;
+			};
+			document.querySelector("#Lines").onchange = function(){ //checkbox stuff
+				lines = !lines;
+			};
+			document.querySelector("#formSel").onchange = function(){ //changes between Frequency and Waveform
+				freq = document.getElementById("formSel").value;
+				//console.log(freq);
+			};
+			document.querySelector("#delayS").onchange = function(){ //Delay Slider
+				delayAmount = document.getElementById("delayS").value;
+				//console.log(freq);
+			};
+		}
+		
+		function playStream(audioElement,path){
+			audioElement.src = path;
+			audioElement.play();
+			audioElement.volume = 0.2;
+			document.querySelector('#status').innerHTML = "Now playing: " + path;
+		}
+		
+		function update() { 
+			// this schedules a call to the update() method in 1/60 seconds
+			requestAnimationFrame(update);
+	
+			// create a new array of 8-bit integers (0-255)
+			var data = new Uint8Array(NUM_SAMPLES/2); 
+			delayNode.delayTime.value = delayAmount;
+			// populate the array with the frequency data
+			// notice these arrays can be passed "by reference" 
+			if(freq==true)
+			{analyserNode.getByteFrequencyData(data);}
+			else
+			{analyserNode.getByteTimeDomainData(data);} // waveform data
+			
+			// DRAW!
+			ctx.clearRect(0,0,800,600); 		
+			var barWidth = 2;
+			var barSpacing = 3;
+			var barHeight = 100;
+			var topSpacing = 50;
+			
+			ctx.strokeStyle = "white";
+			ctx.lineWidth = 1;
+			ctx.lineCap = "round"; 
+			ctx.lineJoin = "round";
+			
+				
+			// loop through the data and draw!
+			for(var i=0; i<data.length; i++) { 
+				ctx.fillStyle = 'rgba(0,255,0,0.6)'; 
+				
+				ctx.fillStyle = "magenta"; //starts from the center and is mirrored  vertically and horizontally
+				ctx.beginPath();
+				ctx.arc(320+i*(barWidth+barSpacing), (10+data[i])+ Math.pow(Math.abs(i*(barWidth+barSpacing)-320)/arcValue, 2), barWidth, 0, 2*Math.PI);
+				ctx.arc(320-i*(barWidth+barSpacing), (10+data[i])+ Math.pow(Math.abs(i*(barWidth+barSpacing)-320)/arcValue, 2), barWidth, 0, 2*Math.PI);
+				ctx.fill();
+				ctx.closePath();
+				
+				ctx.fillStyle = "yellow"; //starts from the center and is mirrored horizontally
+				ctx.beginPath();
+				ctx.arc(320-i*(barWidth+barSpacing), (390-data[i])- Math.pow(Math.abs(i*(barWidth+barSpacing)-320)/arcValue, 2), barWidth, 0, 2*Math.PI);
+				ctx.arc(320+i*(barWidth+barSpacing), (390-data[i])- Math.pow(Math.abs(i*(barWidth+barSpacing)-320)/arcValue, 2), barWidth, 0, 2*Math.PI);
+				ctx.fill();
+				ctx.closePath();
+				
+				
+				
+				// bigger yellow circle
+				var percent = data[i] / 255; //for opacity later
+				var circleRadius = percent * maxRadius;
+				ctx.beginPath();
+				ctx.fillStyle = makeColor(250, 200, 0, .3 - percent/5.0);
+				ctx.arc(canvas.width/2, canvas.height/2, circleRadius , 0, 2 * Math.PI, false);
+				ctx.fill();
+				ctx.closePath();
+				
+				//the squares are rotated 
+				ctx.fillStyle= makeColor(0, 200, 255, .10 - percent/10.0 ); //cyan square color
+				ctx.save();
+				ctx.translate(canvas.width/2, canvas.height/2);
+				ctx.rotate(Math.PI/1.5);
+				ctx.fillRect(0-circleRadius, 0-circleRadius, circleRadius * 2, circleRadius * 2);
+				ctx.restore();
+				
+				ctx.save();
+				ctx.translate(canvas.width/2, canvas.height/2);
+				ctx.rotate(Math.PI/2.5);
+				ctx.fillRect(0-circleRadius, 0-circleRadius, circleRadius * 2, circleRadius * 2);
+				ctx.restore();
+				
+				// smaller yellow circle
+				ctx.save();
+				ctx.beginPath();
+				ctx.fillStyle = makeColor(250, 250, 0, .5 - percent/5.0);
+				ctx.arc(canvas.width/2, canvas.height/2, circleRadius* 0.5, 0, 2 * Math.PI, false);
+				ctx.fill();
+				ctx.closePath();
+				ctx.restore();
+				
+			}
+			
+			for(var i=0; i<data.length; i++) { 
+			ctx.fillStyle= makeColor(0, 100, 100, .50 - percent/10.0 );
+			
+			//triangles from the left side
+			ctx.beginPath();
+			ctx.moveTo(0,5*i);
+			//ctx.lineTo(data[i], 5*i);
+			ctx.lineTo(data[i], 5*i+3);
+			ctx.lineTo(0,5*i+5); 
+			ctx.fill();
+			ctx.closePath();
+			
+			//triangles from the right side
+			ctx.beginPath();
+			ctx.moveTo(canvas.width,5*i);
+			//ctx.lineTo(canvas.width-data[i], 5*i);
+			ctx.lineTo(canvas.width-data[i], 5*i+3);
+			ctx.lineTo(canvas.width,5*i+5); 
+			ctx.fill();
+			ctx.closePath();
+			}
+			 
+			 manipulatePixels();
+		} 
+		
+		// HELPER
+		function makeColor(red, green, blue, alpha){
+   			var color='rgba('+red+','+green+','+blue+', '+alpha+')';
+   			return color;
+		}
+		
+		 // FULL SCREEN MODE
+		function requestFullscreen(element) {
+			if (element.requestFullscreen) {
+			  element.requestFullscreen();
+			} else if (element.mozRequestFullscreen) {
+			  element.mozRequestFullscreen();
+			} else if (element.mozRequestFullScreen) { // camel-cased 'S' was changed to 's' in spec
+			  element.mozRequestFullScreen();
+			} else if (element.webkitRequestFullscreen) {
+			  element.webkitRequestFullscreen();
+			}
+			// .. and do nothing if the method is not supported
+		};
+		
+		function manipulatePixels(){
+			//i)Get all of the rgba pixel data of the canvas by grabbing the
+			//ImageData Object
+			//https://developer.mozilla.org/en-US/docs/Web/API/ImageData
+			var imageData = ctx.getImageData(0,0,canvas.width,canvas.height);
+			
+			//ii)imageData.data is an 8-bit typed array-values range from 0-255
+			//imageData.data contains 4 values per pixel: 4 x canvas.width x
+			//canvas.height = 1024000 values!
+			//we’re looping through this 60FPS - wow!
+			var data = imageData.data;
+			var length=data.length;
+			var width=imageData.width;
+			
+			//iii)Iterate through each pixel
+			//we step by 4 so that we can manipulate 1 pixel per iteration
+			//data[i] is the red value
+			//data[i+1] is the green value 
+			//data[i+2] is the blue value
+			//data[i+3] is the alpha value
+			for(var i=0;i<length;i+=4){
+				//iv)increase red value only
+				if(tintRed){
+				//just the red channel this time
+					data[i]=data[i]+100;
+				}if(tintBlue){
+				//just the red channel this time
+					data[i+2]=data[i+2]+100;
+				}if(tintGreen){
+				//just the red channel this time
+					data[i+1]=data[i+1]+100;
+				}
+				if(greySc){
+				var bright = data[i]* 0.34 + 0.5 * data[i+1] + 0.16*data[i+2];
+				data[i]=bright; //set red value 
+				data[i+1]=bright; //set blue value
+				data[i+2]=bright; //set green value
+				//data[i+3] is the alpha but we’re leaving that alone
+				}
+				if(invert){
+				var red = data[i], green = data[i+1], blue = data[i+2];
+				data[i]=255-red; //set red value 
+				data[i+1]=255-green; //set blue value
+				data[i+2]=255-blue; //set green value
+				//data[i+3] is the alpha but we’re leaving that alone
+				}
+				if(noise && Math.random()<0.10){
+					data[i] = data[i+1]=data[i+2] = 255; //white noise
+					
+					//data[i] = data[i+1]=data[i+2] = 0; //black noise
+					//data[i] = data[i+1]=data[i+2] = 128; //gray noise
+					
+					//data[i+3]=255; //alpha
+				}
+				if(lines){
+					var row = Math.floor(i/4/width);
+					if(row%50 == 0){
+						data[i] = data[i+1] = data[i+2] = data[i+3]=255;
+						
+						data[i+(width*4)]=data[i+(width*4)+1]=data[i+(width*4)+2]=data[i+(width*4)+3]=255;
+					}
+				
+				}
+				
+			}
+			//put the modified data back on the canvas
+			ctx.putImageData(imageData,0,0);
+		}
+		
+		
+		window.addEventListener("load",init);
+	}());
+		
+	</script>
+</head>
+<body>
+<div>
+	<canvas id="canvas" width="640" height="400"></canvas>
+	<!--<div id="controls">-->
+		<audio controls loop></audio>
+		<label>Track: 
+			<select id="trackSelect" >
+				<option value="media/Hello, World!.mp3">Hello, World!</option>
+				<option value="media/The Moss.mp3">The Moss</option>
+				<option value="media/Mystic Messenger.mp3">Mystic Messenger</option>
+			</select>
+		</label>
+		<button id="fsButton">Go Full Screen</button><br>
+		<br>
+		<label>Form: 
+			<select id="formSel" >
+				<option value="1">Frequency</option>
+				<option value="0">Waveform</option>
+			</select>
+		</label>
+		<br>
+		<br>
+		<table>
+		<tr>
+			<td>Tint Red: <input type="checkbox" id="Red"> ||</td>
+			<td>Tint Green: <input type="checkbox" id="Green"> ||</td>
+			<td>Tint Blue: <input type="checkbox" id="Blue"> ||</td>
+		</tr>
+		<tr>
+			<td>GreyScale: <input type="checkbox" id="GreySc"> ||</td>
+			<td>Invert: <input type="checkbox" id="Invert"> ||</td>
+			<td>Noise: <input type="checkbox" id="Noise"> ||</td>
+		</tr>
+		<tr>
+			<td>Lines: <input type="checkbox" id="Lines">  ||</td>
+		</tr>
+		</table>
+		
+		<p> 
+		Circle Size: <br>
+		Smaller <input type="range" id="myRange"  min="75" max="200" value="200"> Bigger
+		
+		<br>Delay: <br>
+		Less <input type="range" id="delayS" min="0.0" max="1.0" value="0" step="0.1"> More
+		<br>Line Curve: <br>
+		More <input type="range" id="arcVal" min="15" max="45" value="20"> Less</p>
+		
+		<p id="status">???</p>
+	<!--</div>-->
+</div>
+</body>
+</html>
